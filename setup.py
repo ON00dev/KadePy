@@ -39,7 +39,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='kadepy',
-    version='0.1.0',
+    version='0.2.0',
     description='High-performance P2P Swarm implementation in C/Python',
     long_description=long_description,
     long_description_content_type="text/markdown",
