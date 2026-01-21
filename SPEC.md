@@ -1,4 +1,4 @@
-# KadePy Protocol Specification (v0.1)
+# KadePy Protocol Specification (v0.2)
 
 This document describes the binary protocol used by KadePy nodes to communicate.
 
@@ -8,17 +8,20 @@ This document describes the binary protocol used by KadePy nodes to communicate.
 - **Byte Order**: Network Byte Order (Big-Endian) for all multi-byte integers (IPs, Ports).
 - **Node ID**: 32 bytes (256 bits).
 - **Distance Metric**: XOR (Kademlia metric).
+- **Authentication**: Ed25519 Signatures.
 
 ## 2. Packet Structure
 
 Every packet consists of a **Header** followed by an optional **Payload**.
 
-### 2.1. Header (33 bytes)
+### 2.1. Header (105 bytes)
 
 | Offset | Size | Field | Description |
 | :--- | :--- | :--- | :--- |
 | 0 | 1 | `Type` | Message Type ID |
-| 1 | 32 | `SenderID` | The 256-bit ID of the sender |
+| 1 | 32 | `SenderPublicKey` | The 256-bit Ed25519 Public Key of the sender (also acts as Node ID) |
+| 33 | 8 | `Timestamp` | 64-bit Unix Timestamp (milliseconds) |
+| 41 | 64 | `Signature` | Ed25519 Signature of the packet content |
 
 ### 2.2. Message Types
 

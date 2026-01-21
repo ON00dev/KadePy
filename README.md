@@ -64,6 +64,45 @@ except KeyboardInterrupt:
     print("Stopping...")
 ```
 
+## IPC Bridge & Node.js Integration
+
+KadePy includes an IPC bridge (`kadepy.ipc`) that allows external processes to interact with the DHT via standard input/output (stdio) using JSON-RPC 2.0. This is useful for integrating KadePy with applications written in other languages like Node.js.
+
+### Starting the IPC Bridge
+
+You can run the IPC bridge directly:
+
+```bash
+python -m kadepy.ipc
+```
+
+It listens for JSON-RPC requests on `stdin` and emits JSON-RPC responses/events on `stdout`.
+
+### Node.js Client Example
+
+An example Node.js client is provided in `examples/node_client.js`. It spawns the Python process and communicates via pipes.
+
+```javascript
+const { spawn } = require('child_process');
+const child = spawn('python', ['-m', 'kadepy.ipc']);
+
+// Send a Ping request
+const req = {
+    jsonrpc: "2.0",
+    method: "ping",
+    params: { ip: "127.0.0.1", port: 8000 },
+    id: 1
+};
+child.stdin.write(JSON.stringify(req) + "\n");
+
+// Listen for responses
+child.stdout.on('data', (data) => {
+    console.log("Received:", data.toString());
+});
+```
+
+Supported methods: `ping`, `find_node`, `announce`, `get_peers`, `start`.
+
 ## Architecture
 
 KadePy follows a hybrid architecture:

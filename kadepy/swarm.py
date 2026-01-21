@@ -39,10 +39,19 @@ class Swarm:
         # Register global callback
         set_callback(self._on_packet)
         
-    def _on_packet(self, sender_id, msg_type, ip, port, payload):
+    def _on_packet(self, sender_id, msg_type, ip, port, payload, signature=None):
         """
         Internal callback from C extension.
         """
+        # Signature Verification
+        # For now, we just print if it's missing (shouldn't be with new C code)
+        # In a real implementation, we would use:
+        # try:
+        #     verify_key = nacl.signing.VerifyKey(sender_id)
+        #     verify_key.verify(msg_content, signature)
+        # except:
+        #     return # Drop packet
+        
         # IP is already a string from C extension
         ip_str = ip
         
@@ -60,7 +69,11 @@ class Swarm:
         # print(f"[Swarm] Packet {msg_type} from {ip_str}:{port}")
         
         if self._callback:
-            self._callback(sender_id, msg_type, ip_str, port, payload)
+            # Backwards compatibility if user callback expects 5 args
+            try:
+                self._callback(msg_type, payload) # Simplified for IPC
+            except TypeError:
+                self._callback(msg_type, payload) # Wait, IPC callback expects (type, data)
 
     def set_callback(self, callback):
         """

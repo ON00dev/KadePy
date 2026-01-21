@@ -26,6 +26,7 @@ The Python layer is designed to be idiomatic and easy to use.
 
 - **`Swarm` Class**: The main entry point. It manages the lifecycle of the DHT node, handles bootstrapping, and exposes methods like `find_node`, `announce_peer`, and `get_peers`.
 - **Callback System**: The Python layer registers a global callback function with the C core. When the C core receives relevant messages (e.g., `MSG_FOUND_NODES`), it acquires the Global Interpreter Lock (GIL) briefly to execute this callback, passing the data back to Python.
+- **IPC Bridge**: A JSON-RPC 2.0 interface over standard input/output (stdio) is provided by `kadepy.ipc`. This enables external processes (e.g., Node.js, Go) to control the DHT node via standard pipes, facilitating multi-language architectures.
 
 ## 3. C Core (`src/`)
 

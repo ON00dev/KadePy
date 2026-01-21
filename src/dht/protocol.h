@@ -16,7 +16,9 @@ enum MsgType {
 #pragma pack(push, 1)
 typedef struct {
     uint8_t type;
-    uint8_t sender_id[32];
+    uint8_t sender_public_key[32]; // Was sender_id, now treated as Public Key
+    uint64_t timestamp;            // Timestamp in milliseconds
+    uint8_t signature[64];         // Ed25519 signature
 } dht_header_t;
 
 // Payload para MSG_FIND_NODE

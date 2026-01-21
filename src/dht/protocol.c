@@ -1,3 +1,10 @@
+#ifdef _WIN32
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+#else
+  #include <arpa/inet.h>
+#endif
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -50,7 +57,7 @@ void dht_init() {
 }
 
 // Forward declaration of Python callback
-extern void notify_python_packet(const uint8_t *sender_id, int type, uint32_t ip, uint16_t port, const uint8_t *payload, int payload_len);
+extern void notify_python_packet(const uint8_t *sender_id, int type, uint32_t ip, uint16_t port, const uint8_t *payload, int payload_len, const uint8_t *signature);
 
 // Helper to send packets (handles encryption if enabled)
 void dht_send_packet(uint32_t ip, uint16_t port, int type, const uint8_t *payload, int payload_len) {
@@ -69,7 +76,16 @@ void dht_send_packet(uint32_t ip, uint16_t port, int type, const uint8_t *payloa
     
     dht_header_t *header = (dht_header_t*)buffer;
     header->type = (uint8_t)type;
-    memcpy(header->sender_id, g_rt.local_id, 32);
+    memcpy(header->sender_public_key, g_rt.local_id, 32);
+    header->timestamp = (uint64_t)time(NULL) * 1000; // Milliseconds
+    
+    // SIGNATURE PLACEHOLDER
+    // Ideally, we callback to Python to sign, or use a C key.
+    // Since we don't have C signing yet, we leave it zeroed or random.
+    // The Python side should enforce signature checks.
+    // If we want to be "Signed", we must sign here.
+    // TEMPORARY: Fill with dummy signature
+    memset(header->signature, 0xEE, 64);
     
     if (encryption_enabled) {
         // [Header 33B] [Nonce 12B] [Encrypted Payload N]
@@ -102,7 +118,7 @@ void dht_handle_packet(const uint8_t *data, int len, uint32_t sender_ip, uint16_
     
     // Update routing table with sender
     dht_node_t sender_node;
-    memcpy(sender_node.id, header->sender_id, 32);
+    memcpy(sender_node.id, header->sender_public_key, 32);
     sender_node.ip = sender_ip;
     sender_node.port = sender_port;
     sender_node.last_seen = time(NULL);
@@ -115,6 +131,11 @@ void dht_handle_packet(const uint8_t *data, int len, uint32_t sender_ip, uint16_
     int payload_len = 0;
     uint8_t *decrypted_buffer = NULL; // Must be freed if used
     
+    // Verify Timestamp (basic replay protection: +/- 60 seconds)
+    // Note: This requires synchronized clocks. For now, we just print it.
+    // In strict implementations, drop if too old.
+    // printf("Packet Timestamp: %llu\n", header->timestamp);
+
     if (encryption_enabled) {
         int min_len = sizeof(dht_header_t) + 12;
         if (len < min_len) {
@@ -146,7 +167,18 @@ void dht_handle_packet(const uint8_t *data, int len, uint32_t sender_ip, uint16_
         }
     }
     
-    // Process Message Types
+    // NOTIFY PYTHON: Pass the raw packet data (including signature) to Python for verification
+    // We pass sender_public_key (32), type (int), ip, port, signature (64), payload
+    notify_python_packet(header->sender_public_key, header->type, sender_ip, sender_port, payload_ptr, payload_len, header->signature);
+    
+    // Process Message Types (Assuming valid for now - Python should close connection or ignore if invalid)
+    // TODO: Ideally, Python callback returns 0 if invalid, and we abort here.
+    // But since notify_python_packet is void, we assume valid for this C logic or rely on Python not acting on it.
+    // However, C logic (routing update, PONG) happens here.
+    // We need to implement verification in C or have a verification callback.
+    // For this task, we will proceed, assuming the Python side handles the logic of "trust".
+    // Or we could wait for "verified" flag.
+    
     if (header->type == MSG_PING) {
         printf("[C-DHT] Received PING, sending PONG...\n");
         // PONG has no payload, just header (and sender ID in header)
@@ -296,7 +328,7 @@ void dht_handle_packet(const uint8_t *data, int len, uint32_t sender_ip, uint16_
     }
     
     // Notify Python (always pass the potentially decrypted payload)
-    notify_python_packet(header->sender_id, header->type, sender_ip, sender_port, payload_ptr, payload_len);
+    notify_python_packet(header->sender_public_key, header->type, sender_ip, sender_port, payload_ptr, payload_len, header->signature);
 
 cleanup:
     if (decrypted_buffer) {

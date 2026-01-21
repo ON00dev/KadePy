@@ -27,7 +27,7 @@ static int g_has_callback = 0;
 
 // --- Helper Methods ---
 
-void notify_python_packet(const uint8_t *sender_id, int type, uint32_t ip, uint16_t port, const uint8_t *payload, int payload_len) {
+void notify_python_packet(const uint8_t *sender_id, int type, uint32_t ip, uint16_t port, const uint8_t *payload, int payload_len, const uint8_t *signature) {
     // Optimization: Don't acquire GIL if no callback is registered
     if (!g_has_callback) return;
 
@@ -46,6 +46,7 @@ void notify_python_packet(const uint8_t *sender_id, int type, uint32_t ip, uint1
         PyObject *py_ip = PyUnicode_FromString(ip_str);
         PyObject *py_port = PyLong_FromLong(port);
         PyObject *py_payload = Py_None;
+        PyObject *py_signature = PyBytes_FromStringAndSize((char*)signature, 64);
 
         // Parse Payload based on Type
         if (type == MSG_PEERS) {
@@ -112,7 +113,8 @@ void notify_python_packet(const uint8_t *sender_id, int type, uint32_t ip, uint1
             Py_INCREF(Py_None);
         }
 
-        PyObject *args = PyTuple_Pack(5, py_id, py_type, py_ip, py_port, py_payload);
+        // Updated callback signature: (id, type, ip, port, payload, signature)
+        PyObject *args = PyTuple_Pack(6, py_id, py_type, py_ip, py_port, py_payload, py_signature);
         
         PyObject *result = PyObject_CallObject(packet_callback, args);
         
@@ -128,6 +130,7 @@ void notify_python_packet(const uint8_t *sender_id, int type, uint32_t ip, uint1
         Py_DECREF(py_ip);
         Py_DECREF(py_port);
         Py_DECREF(py_payload);
+        Py_DECREF(py_signature);
     }
 
     PyGILState_Release(gstate);
