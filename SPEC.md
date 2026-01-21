@@ -1,0 +1,65 @@
+# KadePy Protocol Specification (v0.1)
+
+This document describes the binary protocol used by KadePy nodes to communicate.
+
+## 1. Fundamentals
+
+- **Transport**: UDP
+- **Byte Order**: Network Byte Order (Big-Endian) for all multi-byte integers (IPs, Ports).
+- **Node ID**: 32 bytes (256 bits).
+- **Distance Metric**: XOR (Kademlia metric).
+
+## 2. Packet Structure
+
+Every packet consists of a **Header** followed by an optional **Payload**.
+
+### 2.1. Header (33 bytes)
+
+| Offset | Size | Field | Description |
+| :--- | :--- | :--- | :--- |
+| 0 | 1 | `Type` | Message Type ID |
+| 1 | 32 | `SenderID` | The 256-bit ID of the sender |
+
+### 2.2. Message Types
+
+| Value | Name | Payload | Description |
+| :--- | :--- | :--- | :--- |
+| `0x00` | `PING` | *None* | Keep-alive check. |
+| `0x01` | `PONG` | *None* | Response to PING. |
+| `0x02` | `FIND_NODE` | `TargetID` (32B) | Request closest nodes to TargetID. |
+| `0x03` | `FOUND_NODES`| `Count` (1B) + `Nodes` | Response to FIND_NODE. |
+| `0x04` | `ANNOUNCE` | `InfoHash` (32B) + `Port` (2B)| Announce availability of a resource (peer). |
+| `0x05` | `GET_PEERS` | `InfoHash` (32B) | Request peers for a specific resource. |
+| `0x06` | `PEERS` | `InfoHash` (32B) + `Count` (1B) + `Peers` | Response to GET_PEERS. |
+
+## 3. Payload Formats
+
+### 3.1. Node Wire Format (38 bytes)
+Used in `FOUND_NODES` responses to transmit contact info of K nodes.
+
+| Size | Field | Description |
+| :--- | :--- | :--- |
+| 32 | `ID` | Node ID |
+| 4 | `IP` | IPv4 Address (Big Endian) |
+| 2 | `Port` | UDP Port (Big Endian) |
+
+### 3.2. Peer Wire Format (6 bytes)
+Used in `PEERS` responses to transmit peer contact info (IP/Port only).
+
+| Size | Field | Description |
+| :--- | :--- | :--- |
+| 4 | `IP` | IPv4 Address (Big Endian) |
+| 2 | `Port` | UDP Port (Big Endian) |
+
+## 4. Encryption (Optional)
+
+If a **Network Key** is set, the packet payload (everything after the Header) can be encrypted using **ChaCha20**.
+
+- **Nonce**: Derived from timestamp or packet counter (implementation specific detail, currently standard implementation uses a static or derived nonce convention which is subject to future revision).
+- **Key**: 32-byte shared secret.
+
+## 5. Routing Table
+
+- **K-Buckets**: Nodes are stored in buckets based on the XOR distance from the local node.
+- **K**: Typically 20 (max nodes per bucket).
+- **Bucket Splitting**: Standard Kademlia splitting rules apply.
