@@ -28,13 +28,14 @@ Thank you for considering contributing to KadePy! This project is open-source an
     ```
 2.  **Make your changes**.
     - If modifying C code (`src/`), ensure it compiles without warnings.
+    - If working on the **Native Hyperswarm Extension**, ensure you have `libsodium` available or in `vendor/libsodium`.
     - If modifying Python code (`kadepy/`), follow standard Python coding conventions (PEP 8).
 3.  **Run Tests**:
     - We currently have `verify_full.py` and `test_script.py` for integration testing.
     - Ensure all tests pass before committing.
     ```bash
     python setup.py build_ext --inplace  # Rebuild C extension
-    python verify_full.py
+    python tests/verify_native_crypto.py # Verify encryption/handshake
     ```
 4.  **Commit your changes**:
     - Use clear and descriptive commit messages.

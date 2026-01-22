@@ -70,3 +70,18 @@ The codebase uses conditional compilation (`#ifdef _WIN32`) to handle OS differe
 - **Networking**: `Winsock2` vs `sys/socket.h`.
 - **Threading**: `Windows API` vs `pthreads`.
 - **RNG**: `BCrypt` vs `/dev/urandom`.
+
+## 5. Native Hyperswarm Extension
+
+To enable true native interoperability with the Hyperswarm network (without Node.js dependencies), the C extension `_hyperswarm` provides a high-performance implementation of the stack.
+
+- **Source**: `src/hyperswarm/`
+- **Components**:
+    - **`hyperswarm_core.c`**: Main state machine, Noise Handshake (XX pattern) logic, and DHT integration.
+    - **`udx.c`**: Implementation of reliable UDP transport (seq/ack, retransmission, congestion control).
+    - **`holepunch.c`**: Logic for NAT traversal (birth/synchronization).
+- **Dependencies**:
+    - **libsodium**: Required for cryptographic primitives (Curve25519, ChaCha20-Poly1305, BLAKE2b, Ed25519).
+- **Status**: Implemented in v0.2.0.
+
+

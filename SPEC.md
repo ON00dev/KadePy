@@ -66,3 +66,28 @@ If a **Network Key** is set, the packet payload (everything after the Header) ca
 - **K-Buckets**: Nodes are stored in buckets based on the XOR distance from the local node.
 - **K**: Typically 20 (max nodes per bucket).
 - **Bucket Splitting**: Standard Kademlia splitting rules apply.
+
+## 6. Hyperswarm Native Protocol (v0.2+)
+
+The Native Hyperswarm Extension implements a distinct protocol stack compatible with Hyperswarm's UDX and Noise layer.
+
+### 6.1. UDX Packet Structure
+
+UDX packets are packed (`#pragma pack(1)`) and structured as follows:
+
+| Size | Field | Description |
+| :--- | :--- | :--- |
+| 1 | `Type` | Packet type (e.g., Data=1, Ack=2, Syn=3) |
+| 4 | `ConnID` | Connection ID (Little Endian) |
+| 4 | `Seq` | Sequence Number (Little Endian) |
+| 4 | `Ack` | Acknowledgment Number (Little Endian) |
+| Var | `Payload` | Data payload (Encrypted after handshake) |
+
+### 6.2. Noise Handshake (XX)
+
+Authentication and Key Exchange follow the Noise XX pattern:
+1.  **Msg 1 (A->B)**: `e` (Ephemeral Key)
+2.  **Msg 2 (B->A)**: `e, ee, s, es` (Responder Auth)
+3.  **Msg 3 (A->B)**: `s, se` (Initiator Auth)
+
+After the handshake, transport keys are derived for split-mode encryption (Initiator Tx = K1, Rx = K2).

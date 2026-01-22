@@ -2,6 +2,7 @@ import socket
 import struct
 import time
 import threading
+import json
 from ._core import (
     create_swarm,
     set_callback,
@@ -36,6 +37,10 @@ class Swarm:
         self.known_nodes = {} # (ip, port) -> last_seen_timestamp
         self.lock = threading.Lock()
         
+        # Hyperswarm Bridge
+        self._event_callbacks = {}
+        self._bridge_peer = None
+
         # Register global callback
         set_callback(self._on_packet)
         
@@ -185,3 +190,72 @@ class Swarm:
 
     def dump_table(self):
         dump_routing_table()
+
+    # -------------------------------------------------------------------------
+    # Hyperswarm Bridge Methods
+    # -------------------------------------------------------------------------
+
+    def on(self, event, callback):
+        """Register a callback for bridge events (e.g. 'data')."""
+        self._event_callbacks[event] = callback
+
+    def join(self, topic):
+        """
+        Join a topic on the Hyperswarm network via the bridge.
+        Topic should be a 32-byte hex string or bytes.
+        """
+        if not self._bridge_peer:
+            self._bridge_peer = Peer()
+            try:
+                self._bridge_peer.connect()
+            except ConnectionRefusedError:
+                print("[Swarm] Could not connect to Hyperswarm Bridge on port 5000.")
+                print("[Swarm] Please run 'node bridge/hyperswarm_bridge.js' first.")
+                return
+
+        if isinstance(topic, bytes):
+            topic_hex = topic.hex()
+        else:
+            topic_hex = topic
+            
+        msg = {"op": "join", "topic": topic_hex}
+        self._bridge_peer.write(msg)
+
+    def run(self):
+        """
+        Start the event loop to listen for bridge messages.
+        Blocking call.
+        """
+        if not self._bridge_peer:
+            print("[Swarm] Bridge not connected.")
+            return
+
+        buffer = ""
+        while True:
+            try:
+                data = self._bridge_peer.socket.recv(4096)
+                if not data:
+                    break
+                
+                buffer += data.decode("utf-8")
+                
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    if not line.strip():
+                        continue
+                    
+                    try:
+                        msg = json.loads(line)
+                        self._on_bridge_event(msg)
+                    except json.JSONDecodeError:
+                        print(f"[Swarm] Invalid JSON from bridge: {line}")
+                        
+            except Exception as e:
+                print(f"[Swarm] Error in run loop: {e}")
+                break
+
+    def _on_bridge_event(self, msg):
+        event = msg.get("event")
+        if event == "data" and "data" in self._event_callbacks:
+            self._event_callbacks["data"](msg.get("data"))
+

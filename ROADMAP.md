@@ -2,15 +2,21 @@
 
 This document outlines the development plan for KadePy.
 
-## ✅ Version 0.1.0 (Alpha) - Current
+## ✅ Version 0.1.0 (Alpha)
 - **Core DHT**: Implementation of `PING`, `FIND_NODE`, `ANNOUNCE_PEER`, `GET_PEERS`.
 - **Hybrid Architecture**: C Extension for performance, Python for API.
 - **Cross-Platform**: Full support for Windows (Winsock/BCrypt) and Linux (POSIX).
 - **Security**: Cryptographically secure RNG for ID generation.
 - **Performance**: GIL-optimized reactor thread.
 
-## 🚀 Version 0.2.0 (Beta) - Upcoming
+## ✅ Version 0.2.0 (Beta) - Current
+- **Hyperswarm Native Extension**:
+    - [x] Initial C extension structure (`_hyperswarm`).
+    - [x] Noise Protocol Handshake (C implementation w/ libsodium).
+    - [x] UDX Transport Layer (Reliable UDP structure).
+    - [x] Distributed Holepunching (Logic flow).
 - **Storage RPCs**: Implement `STORE` and `FIND_VALUE` to allow storing generic data (blobs) in the DHT, not just peer contacts.
+
 - **Improved Bootstrapping**: Better logic for joining the network and refreshing buckets.
 - **Error Handling**: richer exception types in Python for C-level network errors.
 - **CI/CD**: GitHub Actions for automated building and testing of wheels.

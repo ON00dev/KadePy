@@ -5,9 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-01-20
+## [0.2.1] - 2026-01-21
+
+### Fixed
+- Bumped version to resolve PyPI upload conflict (file name reuse).
+
+## [0.2.0] - 2026-01-21
 
 ### Added
+- **Hyperswarm Native Extension**:
+  - **Noise Handshake (XX)**: Secure, authenticated peer connections using Libsodium (Ed25519/Curve25519).
+  - **UDX Transport**: Custom reliable UDP protocol with sequencing, ACKs, and congestion control.
+  - **Encrypted Transport**: XSalsa20-Poly1305 encryption for all data packets post-handshake.
+  - **Holepunching**: Native NAT traversal logic.
 - **IPC Bridge**: Introduced `kadepy.ipc` module for stdio-based JSON-RPC communication, enabling integration with Node.js and other languages.
 - **Node.js Integration**: Added `examples/node_client.js` demonstrating how to control KadePy from Node.js.
 - **Signed DHT-RPC**: Updated protocol header (`dht_header_t`) to include:

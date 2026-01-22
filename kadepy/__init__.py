@@ -11,7 +11,7 @@ from ._core import (
 
 from .swarm import Swarm
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     'create_swarm',

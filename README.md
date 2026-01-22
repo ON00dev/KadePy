@@ -8,9 +8,13 @@ KadePy is a robust and efficient Distributed Hash Table (DHT) library implementi
 
 - **High Performance**: Core logic (UDP reactor, routing table, storage, protocol) implemented in C for minimal overhead and maximum throughput.
 - **Cross-Platform**: Fully compatible with Windows, Linux, and macOS.
+- **Hyperswarm Native Extension (New in v0.2.0)**:
+  - **Noise Handshake (XX Pattern)**: Secure, authenticated connections using `libsodium` (Ed25519/Curve25519).
+  - **UDX Transport**: Reliable, encrypted UDP transport with congestion control and packet ordering.
+  - **Holepunching**: Built-in NAT traversal.
 - **Secure**:
-  - Uses **ChaCha20** for optional packet encryption.
-  - Implements secure random number generation (`BCryptGenRandom` on Windows, `/dev/urandom` on POSIX).
+  - Uses **XSalsa20-Poly1305** for transport encryption.
+  - Implements secure random number generation.
 - **Concurrency**: Thread-safe architecture with a dedicated network reactor thread, releasing the GIL whenever possible.
 - **Easy to Use**: Simple Python API for creating nodes, storing values, and finding peers.
 
@@ -28,6 +32,7 @@ pip install .
 
 - Python 3.10+
 - C Compiler (GCC/Clang on Linux/macOS, MSVC on Windows)
+- Libsodium (automatically bundled on Windows if built via setup.py)
 
 ## Quick Start
 
@@ -64,45 +69,6 @@ except KeyboardInterrupt:
     print("Stopping...")
 ```
 
-## IPC Bridge & Node.js Integration
-
-KadePy includes an IPC bridge (`kadepy.ipc`) that allows external processes to interact with the DHT via standard input/output (stdio) using JSON-RPC 2.0. This is useful for integrating KadePy with applications written in other languages like Node.js.
-
-### Starting the IPC Bridge
-
-You can run the IPC bridge directly:
-
-```bash
-python -m kadepy.ipc
-```
-
-It listens for JSON-RPC requests on `stdin` and emits JSON-RPC responses/events on `stdout`.
-
-### Node.js Client Example
-
-An example Node.js client is provided in `examples/node_client.js`. It spawns the Python process and communicates via pipes.
-
-```javascript
-const { spawn } = require('child_process');
-const child = spawn('python', ['-m', 'kadepy.ipc']);
-
-// Send a Ping request
-const req = {
-    jsonrpc: "2.0",
-    method: "ping",
-    params: { ip: "127.0.0.1", port: 8000 },
-    id: 1
-};
-child.stdin.write(JSON.stringify(req) + "\n");
-
-// Listen for responses
-child.stdout.on('data', (data) => {
-    console.log("Received:", data.toString());
-});
-```
-
-Supported methods: `ping`, `find_node`, `announce`, `get_peers`, `start`.
-
 ## Architecture
 
 KadePy follows a hybrid architecture:
@@ -113,11 +79,13 @@ KadePy follows a hybrid architecture:
     *   **Routing**: Manages K-Buckets and node lookups.
     *   **Storage**: In-memory key-value storage with expiration.
     *   **Crypto**: ChaCha20 encryption and secure RNG.
+    *   **Hyperswarm (Experimental)**: Native C implementation of Noise/UDX (work in progress).
 
 2.  **Python Wrapper (`Swarm`)**:
     *   Provides a high-level API.
     *   Manages the C reactor lifecycle.
     *   Handles bootstrapping and iterative lookups.
+
 
 ## Contributing
 
