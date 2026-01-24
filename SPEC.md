@@ -91,3 +91,10 @@ Authentication and Key Exchange follow the Noise XX pattern:
 3.  **Msg 3 (A->B)**: `s, se` (Initiator Auth)
 
 After the handshake, transport keys are derived for split-mode encryption (Initiator Tx = K1, Rx = K2).
+
+### 6.3. Private Bootstrap Mode
+
+Nodes can be initialized in **Isolated Mode** to act as a Bootstrap Node for a private network (Off-Grid).
+- **Fixed Port**: Typically binds to port `10001` (configurable).
+- **Empty Bootstrap List**: Does not attempt to contact public bootstrap servers.
+- **Role**: Acts as the initial contact point (Beacon) for other nodes in the local mesh.

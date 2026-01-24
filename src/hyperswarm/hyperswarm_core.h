@@ -72,10 +72,14 @@ typedef struct {
     int lookup_active;
     uint8_t lookup_target[32];
     uint32_t lookup_last_activity;
+
+    // Bootstrap Configuration
+    int is_bootstrap;
 } HyperswarmState;
 
 HyperswarmState* hyperswarm_create();
 void hyperswarm_destroy(HyperswarmState* state);
+int hyperswarm_init_bootstrap_node(HyperswarmState* state, int port, int isolated_mode);
 void hyperswarm_join(HyperswarmState* state, const char* topic_hex);
 void hyperswarm_leave(HyperswarmState* state, const char* topic_hex);
 void hyperswarm_poll(HyperswarmState* state);

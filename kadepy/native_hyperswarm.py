@@ -8,6 +8,19 @@ class NativeHyperswarm:
     def __init__(self):
         self._node = NativeNode()
         
+    def init_bootstrap_node(self, port=10001, isolated=True):
+        """
+        Initialize this node as a Bootstrap Node (Private Network Beacon).
+        
+        Args:
+            port (int): Fixed port to bind to (default: 10001).
+            isolated (bool): If True, starts with empty bootstrap list (Isolated Mode).
+        """
+        if hasattr(self._node, 'init_bootstrap_node'):
+            self._node.init_bootstrap_node(port, int(isolated))
+        else:
+            raise NotImplementedError("Native extension does not support init_bootstrap_node")
+
     def join(self, topic):
         """
         Join a topic on the Hyperswarm network.

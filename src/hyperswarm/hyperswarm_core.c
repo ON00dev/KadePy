@@ -203,6 +203,7 @@ HyperswarmState* hyperswarm_create() {
     if (state) {
         state->running = 1;
         state->hs_state = HS_STATE_NONE;
+        state->is_bootstrap = 0;
 
         // Initialize UDX
         state->udx = udx_create(0);
@@ -240,6 +241,33 @@ void hyperswarm_destroy(HyperswarmState* state) {
         udx_destroy(state->udx);
         free(state);
     }
+}
+
+int hyperswarm_init_bootstrap_node(HyperswarmState* state, int port, int isolated_mode) {
+    if (!state) return -1;
+    
+    // 1. Re-bind UDX to fixed port if requested
+    if (port > 0) {
+        if (state->udx) {
+             udx_destroy(state->udx);
+        }
+        state->udx = udx_create(port);
+        if (!state->udx) {
+            printf("[C-Native] Failed to bind to fixed port %d\n", port);
+            return -1;
+        }
+        printf("[C-Native] Bootstrap Node bound to fixed port %d\n", port);
+    }
+    
+    // 2. Set Isolated Mode
+    if (isolated_mode) {
+        state->is_bootstrap = 1;
+        // In isolated mode, we start with empty routing table (which it already is),
+        // and we disable default bootstrapping in join (handled by flag).
+        printf("[C-Native] Bootstrap Node initialized in Isolated Mode (No external bootstrap peers).\n");
+    }
+    
+    return 0;
 }
 
 void hyperswarm_add_peer(HyperswarmState* state, const char* ip, int port, const char* id_hex) {
@@ -307,12 +335,17 @@ void hyperswarm_join(HyperswarmState* state, const char* topic_hex) {
         }
     } else {
         printf("[C-Native] No peers found. Waiting for bootstrap or incoming...\n");
-        // Fallback to localhost for testing
-        const char* peer_ip = "127.0.0.1";
-        int peer_port = 8000;
         
-        // Send FIND_NODE to bootstrap
-        hyperswarm_send_find_node(state, peer_ip, peer_port, target_id);
+        if (!state->is_bootstrap) {
+            // Fallback to localhost for testing (or default bootstrap logic)
+            const char* peer_ip = "127.0.0.1";
+            int peer_port = 8000;
+            
+            // Send FIND_NODE to bootstrap
+            hyperswarm_send_find_node(state, peer_ip, peer_port, target_id);
+        } else {
+            printf("[C-Native] I am a Bootstrap Node. Waiting for incoming connections (Isolated Mode).\n");
+        }
     }
 }
 

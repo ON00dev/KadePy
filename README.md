@@ -12,6 +12,7 @@ KadePy is a robust and efficient Distributed Hash Table (DHT) library implementi
   - **Noise Handshake (XX Pattern)**: Secure, authenticated connections using `libsodium` (Ed25519/Curve25519).
   - **UDX Transport**: Reliable, encrypted UDP transport with congestion control and packet ordering.
   - **Holepunching**: Built-in NAT traversal.
+  - **Private Bootstrap Mode**: Run isolated nodes on fixed ports to serve as private network beacons.
 - **Secure**:
   - Uses **XSalsa20-Poly1305** for transport encryption.
   - Implements secure random number generation.

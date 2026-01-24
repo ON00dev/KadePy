@@ -41,6 +41,18 @@ static int HyperswarmNode_init(HyperswarmNode* self, PyObject* args, PyObject* k
 // Methods
 // --------------------------------------------------------------------------
 
+static PyObject* HyperswarmNode_init_bootstrap_node(HyperswarmNode* self, PyObject* args) {
+    int port;
+    int isolated_mode;
+    if (!PyArg_ParseTuple(args, "ii", &port, &isolated_mode)) return NULL;
+    
+    if (hyperswarm_init_bootstrap_node(self->state, port, isolated_mode) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to initialize bootstrap node");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
 static PyObject* HyperswarmNode_join(HyperswarmNode* self, PyObject* args) {
     const char* topic_hex;
     if (!PyArg_ParseTuple(args, "s", &topic_hex)) {
@@ -95,6 +107,7 @@ static PyObject* HyperswarmNode_add_peer(HyperswarmNode* self, PyObject* args) {
 }
 
 static PyMethodDef HyperswarmNode_methods[] = {
+    {"init_bootstrap_node", (PyCFunction)HyperswarmNode_init_bootstrap_node, METH_VARARGS, "Initialize as Bootstrap Node (Fixed Port, Isolated)"},
     {"join", (PyCFunction)HyperswarmNode_join, METH_VARARGS, "Join a topic"},
     {"leave", (PyCFunction)HyperswarmNode_leave, METH_VARARGS, "Leave a topic"},
     {"poll", (PyCFunction)HyperswarmNode_poll, METH_NOARGS, "Poll for network events"},
