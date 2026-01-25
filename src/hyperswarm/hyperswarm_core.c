@@ -4,6 +4,45 @@
 #include <string.h>
 #include "../dht/protocol.h"
 
+// --------------------------------------------------------------------------
+// Session Management Helpers
+// --------------------------------------------------------------------------
+
+PeerSession* get_session(HyperswarmState* state, const char* ip, int port) {
+    for (int i = 0; i < MAX_PEERS; i++) {
+        if (state->peers[i].active && 
+            strncmp(state->peers[i].ip, ip, 16) == 0 && 
+            state->peers[i].port == port) {
+            return &state->peers[i];
+        }
+    }
+    return NULL;
+}
+
+PeerSession* create_session(HyperswarmState* state, const char* ip, int port) {
+    // Check if exists
+    PeerSession* existing = get_session(state, ip, port);
+    if (existing) return existing;
+    
+    // Find empty slot
+    for (int i = 0; i < MAX_PEERS; i++) {
+        if (!state->peers[i].active) {
+            memset(&state->peers[i], 0, sizeof(PeerSession));
+            state->peers[i].active = 1;
+            strncpy(state->peers[i].ip, ip, 16);
+            state->peers[i].port = port;
+            state->peers[i].hs_state = HS_STATE_NONE;
+            return &state->peers[i];
+        }
+    }
+    printf("[C-Native] Warning: Peer list full! Cannot accept %s:%d\n", ip, port);
+    return NULL;
+}
+
+// --------------------------------------------------------------------------
+// Helpers
+// --------------------------------------------------------------------------
+
 // Helper to print hex
 void print_hex(const char* label, const unsigned char* data, int len) {
     printf("%s: ", label);
@@ -202,8 +241,13 @@ HyperswarmState* hyperswarm_create() {
     HyperswarmState* state = (HyperswarmState*)malloc(sizeof(HyperswarmState));
     if (state) {
         state->running = 1;
-        state->hs_state = HS_STATE_NONE;
         state->is_bootstrap = 0;
+        
+        // Initialize Peers
+        for (int i=0; i<MAX_PEERS; i++) {
+            state->peers[i].active = 0;
+            state->peers[i].hs_state = HS_STATE_NONE;
+        }
 
         // Initialize UDX
         state->udx = udx_create(0);
@@ -322,12 +366,17 @@ void hyperswarm_join(HyperswarmState* state, const char* topic_hex) {
             // 2. Initiate Handshake (Aggressive join)
             holepunch_start(&state->hp, ip_str, port);
             
+            // Create Session
+            PeerSession* session = create_session(state, ip_str, port);
+            if (!session) continue;
+            session->hs_state = HS_STATE_INITIATOR_SEND_E;
+            
             uint8_t packet[33];
             packet[0] = 0x01; // Msg Type 1: Handshake 'e'
             
 #if HAS_SODIUM
-            crypto_box_keypair(state->ephemeral_pk, state->ephemeral_sk);
-            memcpy(packet + 1, state->ephemeral_pk, 32);
+            crypto_box_keypair(session->ephemeral_pk, session->ephemeral_sk);
+            memcpy(packet + 1, session->ephemeral_pk, 32);
 #else
             memset(packet + 1, 0xAB, 32);
 #endif
@@ -358,17 +407,21 @@ void hyperswarm_handle_handshake_packet(HyperswarmState* state, const char* send
     if (msg_type == 0x01) { // Msg 1: 'e' (Initiator -> Responder)
         if (len < 33) return;
         
+        // Create new session for incoming initiator
+        PeerSession* session = create_session(state, sender_ip, sender_port);
+        if (!session) return;
+
 #if HAS_SODIUM
         printf("[Noise] Processing 'e'...\n");
         // 1. Store remote ephemeral 're'
-        memcpy(state->remote_ephemeral_pk, buffer + 1, 32);
+        memcpy(session->remote_ephemeral_pk, buffer + 1, 32);
 
         // 2. Generate our ephemeral 'e'
-        crypto_box_keypair(state->ephemeral_pk, state->ephemeral_sk);
+        crypto_box_keypair(session->ephemeral_pk, session->ephemeral_sk);
 
         // 3. Perform DH(e, re) -> 'ee'
         unsigned char k[crypto_scalarmult_SCALARBYTES];
-        if (crypto_scalarmult(k, state->ephemeral_sk, state->remote_ephemeral_pk) != 0) {
+        if (crypto_scalarmult(k, session->ephemeral_sk, session->remote_ephemeral_pk) != 0) {
              printf("[Noise] Error: DH(e, re) failed\n");
              return;
         }
@@ -383,35 +436,41 @@ void hyperswarm_handle_handshake_packet(HyperswarmState* state, const char* send
         memset(nonce, 0, sizeof(nonce)); // Use 0 for handshake msg
         crypto_secretbox_easy(encrypted_s, state->static_pk, crypto_box_PUBLICKEYBYTES, nonce, key_s);
 
-        // 6. Calculate 'es' = DH(s, re) (My static, Remote ephemeral)
-        // Note: We don't use it in Msg 2 payload, but it's part of Noise state.
-        // We will skip strict state updates for this prototype.
-
-        // 7. Send Msg 2: [0x02] [e (32)] [encrypted_s (48)]
+        // 6. Send Msg 2: [0x02] [e (32)] [encrypted_s (48)]
         uint8_t response[1 + 32 + 48];
         response[0] = 0x02;
-        memcpy(response + 1, state->ephemeral_pk, 32);
+        memcpy(response + 1, session->ephemeral_pk, 32);
         memcpy(response + 33, encrypted_s, 48);
 
         udx_send(state->udx, sender_ip, sender_port, UDX_TYPE_DATA, response, sizeof(response), NULL);
         printf("[Noise] Sent Handshake Msg 2 (Encrypted Identity) to %s:%d\n", sender_ip, sender_port);
         
-        state->hs_state = HS_STATE_RESPONDER_AWAIT_S_SE;
+        session->hs_state = HS_STATE_RESPONDER_AWAIT_S_SE;
 #else
         printf("[Noise] Libsodium missing. Cannot process 'e'.\n");
 #endif
     }
     else if (msg_type == 0x02) { // Msg 2: 'e', 'ee', 's', 'es' (Responder -> Initiator)
+        PeerSession* session = get_session(state, sender_ip, sender_port);
+        if (!session) {
+             // Maybe we started it? Create session if we are initiator and expecting response
+             // But for now, assume we created it when sending Msg 1 (which we need to fix in join logic)
+             // For this prototype, lets try create if not exists, but we need our ephemeral_sk...
+             // If we don't have session, we can't process Msg 2 because we lost our 'e'.
+             printf("[Noise] Error: Unknown session for Msg 2 from %s:%d\n", sender_ip, sender_port);
+             return;
+        }
+
 #if HAS_SODIUM
         printf("[Noise] Processing Msg 2...\n");
         // Payload: [0x02] [re (32)] [encrypted_rs (48)]
         if (len < 1 + 32 + 48) return;
         
-        memcpy(state->remote_ephemeral_pk, buffer + 1, 32);
+        memcpy(session->remote_ephemeral_pk, buffer + 1, 32);
         
         // 1. Perform DH(e, re) -> 'ee'
         unsigned char k[crypto_scalarmult_SCALARBYTES];
-        crypto_scalarmult(k, state->ephemeral_sk, state->remote_ephemeral_pk);
+        crypto_scalarmult(k, session->ephemeral_sk, session->remote_ephemeral_pk);
         
         // 2. Derive key_s = hash(ee)
         unsigned char key_s[crypto_secretbox_KEYBYTES];
@@ -423,7 +482,7 @@ void hyperswarm_handle_handshake_packet(HyperswarmState* state, const char* send
         unsigned char nonce[crypto_secretbox_NONCEBYTES];
         memset(nonce, 0, sizeof(nonce));
         
-        if (crypto_secretbox_open_easy(state->remote_static_pk, encrypted_rs, 48, nonce, key_s) != 0) {
+        if (crypto_secretbox_open_easy(session->remote_static_pk, encrypted_rs, 48, nonce, key_s) != 0) {
             printf("[Noise] Error: Failed to decrypt remote identity!\n");
             return;
         }
@@ -431,7 +490,7 @@ void hyperswarm_handle_handshake_packet(HyperswarmState* state, const char* send
         
         // 4. Calculate 'es' = DH(e, rs) (My ephemeral, Remote static)
         unsigned char es[crypto_scalarmult_SCALARBYTES];
-        crypto_scalarmult(es, state->ephemeral_sk, state->remote_static_pk);
+        crypto_scalarmult(es, session->ephemeral_sk, session->remote_static_pk);
         
         // 5. Derive key_s2 = hash(es)
         unsigned char key_s2[crypto_secretbox_KEYBYTES];
@@ -450,33 +509,36 @@ void hyperswarm_handle_handshake_packet(HyperswarmState* state, const char* send
         printf("[Noise] Sent Handshake Msg 3 to %s:%d\n", sender_ip, sender_port);
         
         // Split: Derive Transport Keys
-        // k1 = H(es || "1"), k2 = H(es || "2")
-        // Initiator: tx=k1, rx=k2
         unsigned char k1[32], k2[32];
         uint8_t salt1[] = "1";
         uint8_t salt2[] = "2";
         crypto_generichash(k1, 32, es, sizeof(es), salt1, 1);
         crypto_generichash(k2, 32, es, sizeof(es), salt2, 1);
         
-        memcpy(state->tx_key, k1, 32);
-        memcpy(state->rx_key, k2, 32);
-        state->tx_nonce = 0;
-        state->rx_nonce = 0;
+        memcpy(session->tx_key, k1, 32);
+        memcpy(session->rx_key, k2, 32);
+        session->tx_nonce = 0;
+        session->rx_nonce = 0;
 
         printf("[Noise] Handshake Established (Initiator)!\n");
-        state->hs_state = HS_STATE_ESTABLISHED;
+        session->hs_state = HS_STATE_ESTABLISHED;
 #endif
     }
     else if (msg_type == 0x03) { // Msg 3: 's', 'se' (Initiator -> Responder)
+        PeerSession* session = get_session(state, sender_ip, sender_port);
+        if (!session) {
+             printf("[Noise] Error: Unknown session for Msg 3 from %s:%d\n", sender_ip, sender_port);
+             return;
+        }
+
 #if HAS_SODIUM
         printf("[Noise] Processing Msg 3...\n");
         // Payload: [0x03] [encrypted_rs (48)]
         if (len < 1 + 48) return;
         
         // 1. Calculate 'es' = DH(s, re) (My static, Remote ephemeral)
-        // We are Responder. My static = static_sk. Remote ephemeral = remote_ephemeral_pk.
         unsigned char es[crypto_scalarmult_SCALARBYTES];
-        crypto_scalarmult(es, state->static_sk, state->remote_ephemeral_pk);
+        crypto_scalarmult(es, state->static_sk, session->remote_ephemeral_pk);
         
         // 2. Derive key_s2 = hash(es)
         unsigned char key_s2[crypto_secretbox_KEYBYTES];
@@ -488,26 +550,24 @@ void hyperswarm_handle_handshake_packet(HyperswarmState* state, const char* send
         unsigned char nonce[crypto_secretbox_NONCEBYTES];
         memset(nonce, 0, sizeof(nonce));
         
-        if (crypto_secretbox_open_easy(state->remote_static_pk, encrypted_rs, 48, nonce, key_s2) != 0) {
+        if (crypto_secretbox_open_easy(session->remote_static_pk, encrypted_rs, 48, nonce, key_s2) != 0) {
              printf("[Noise] Error: Failed to decrypt initiator identity!\n");
              return;
         }
         
         // Split: Derive Transport Keys
-        // k1 = H(es || "1"), k2 = H(es || "2")
-        // Responder: tx=k2, rx=k1
         unsigned char k1[32], k2[32];
         uint8_t salt1[] = "1";
         uint8_t salt2[] = "2";
         crypto_generichash(k1, 32, es, sizeof(es), salt1, 1);
         crypto_generichash(k2, 32, es, sizeof(es), salt2, 1);
         
-        memcpy(state->tx_key, k2, 32);
-        memcpy(state->rx_key, k1, 32);
-        state->tx_nonce = 0;
-        state->rx_nonce = 0;
+        memcpy(session->tx_key, k2, 32);
+        memcpy(session->rx_key, k1, 32);
+        session->tx_nonce = 0;
+        session->rx_nonce = 0;
 
-        state->hs_state = HS_STATE_ESTABLISHED;
+        session->hs_state = HS_STATE_ESTABLISHED;
         printf("[Noise] Handshake Established (Responder)! Remote verified.\n");
 #endif
     }
@@ -549,32 +609,25 @@ void hyperswarm_poll(HyperswarmState* state) {
             else {
 #if HAS_SODIUM
                  int decrypted = 0;
-                 if (state->hs_state == HS_STATE_ESTABLISHED && len >= crypto_secretbox_MACBYTES) {
+                 PeerSession* session = get_session(state, sender_ip, sender_port);
+                 
+                 if (session && session->hs_state == HS_STATE_ESTABLISHED && len >= crypto_secretbox_MACBYTES) {
                      unsigned char n[crypto_secretbox_NONCEBYTES];
                      memset(n, 0, sizeof(n));
                      memcpy(n, &seq, 4);
                      
                      uint8_t plain[1024];
-                     if (crypto_secretbox_open_easy(plain, buffer, len, n, state->rx_key) == 0) {
+                     if (crypto_secretbox_open_easy(plain, buffer, len, n, session->rx_key) == 0) {
                          int plain_len = len - crypto_secretbox_MACBYTES;
-                         printf("[C-Native] Received Encrypted MSG: %.*s\n", plain_len, plain);
+                         printf("[C-Native] Received Encrypted MSG from %s:%d: %.*s\n", sender_ip, sender_port, plain_len, plain);
                          decrypted = 1;
                      } else {
-                         printf("[Debug] Decryption failed for seq %d (Len: %d)\n", seq, len);
-                         printf("[Debug] Full RxKey: ");
-                         for(int i=0; i<32; i++) printf("%02x", state->rx_key[i]);
-                         printf("\n");
-                         printf("[Debug] Full Nonce: ");
-                         for(int i=0; i<crypto_secretbox_NONCEBYTES; i++) printf("%02x", n[i]);
-                         printf("\n");
-                         printf("[Debug] Full Ciphertext (first 32): ");
-                         for(int i=0; i<32 && i<len; i++) printf("%02x", buffer[i]);
-                         printf("\n");
+                         printf("[Debug] Decryption failed for seq %d (Len: %d) from %s:%d\n", seq, len, sender_ip, sender_port);
                      }
                  }
                  if (!decrypted)
 #endif
-                 printf("[C-Native] Received DATA %d bytes: %.*s\n", len, len, buffer);
+                 printf("[C-Native] Received DATA %d bytes from %s:%d: %.*s\n", len, sender_ip, sender_port, len, buffer);
             }
         }
     }
@@ -604,16 +657,27 @@ void hyperswarm_send_debug(HyperswarmState* state, const char* ip, int port, con
     
     const uint8_t* key = NULL;
 #if HAS_SODIUM
-    if (state->hs_state == HS_STATE_ESTABLISHED) {
-        key = state->tx_key;
-        printf("[Debug] Sending ENCRYPTED packet to %s:%d. TxKey[0]: %02x\n", ip, port, key[0]);
-        printf("[Debug] Full TxKey: ");
-        for(int i=0; i<32; i++) printf("%02x", key[i]);
-        printf("\n");
+    PeerSession* session = get_session(state, ip, port);
+    if (session && session->hs_state == HS_STATE_ESTABLISHED) {
+        key = session->tx_key;
+        printf("[Debug] Sending ENCRYPTED packet to %s:%d\n", ip, port);
     } else {
-        printf("[Debug] Sending PLAINTEXT packet (State: %d)\n", state->hs_state);
+        printf("[Debug] Sending PLAINTEXT packet to %s:%d\n", ip, port);
     }
 #endif
 
     udx_send(state->udx, ip, port, UDX_TYPE_DATA, (const uint8_t*)msg, strlen(msg), key);
+}
+
+void hyperswarm_broadcast(HyperswarmState* state, const char* msg) {
+    if (!state || !state->udx) return;
+    
+    int count = 0;
+    for (int i=0; i<MAX_PEERS; i++) {
+        if (state->peers[i].active && state->peers[i].hs_state == HS_STATE_ESTABLISHED) {
+            hyperswarm_send_debug(state, state->peers[i].ip, state->peers[i].port, msg);
+            count++;
+        }
+    }
+    printf("[C-Native] Broadcasted message to %d peers.\n", count);
 }

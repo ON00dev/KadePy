@@ -39,6 +39,29 @@ typedef enum {
     HS_STATE_ESTABLISHED
 } HandshakeStateEnum;
 
+#define MAX_PEERS 32
+
+typedef struct {
+    int active;
+    char ip[16];
+    int port;
+    
+    // Handshake State per Peer
+    HandshakeStateEnum hs_state;
+    unsigned char ephemeral_pk[crypto_box_PUBLICKEYBYTES];
+    unsigned char ephemeral_sk[crypto_box_SECRETKEYBYTES];
+    unsigned char remote_static_pk[crypto_box_PUBLICKEYBYTES];
+    unsigned char remote_ephemeral_pk[crypto_box_PUBLICKEYBYTES];
+    
+    // Session Keys (Rx/Tx)
+    unsigned char rx_key[32];
+    unsigned char tx_key[32];
+    uint64_t rx_nonce;
+    uint64_t tx_nonce;
+    
+    uint32_t last_activity;
+} PeerSession;
+
 typedef struct {
     int running;
     udx_socket_t* udx;
@@ -55,19 +78,6 @@ typedef struct {
     // DHT Routing Table
     routing_table_t routing;
     
-    // Handshake State
-    HandshakeStateEnum hs_state;
-    unsigned char ephemeral_pk[crypto_box_PUBLICKEYBYTES];
-    unsigned char ephemeral_sk[crypto_box_SECRETKEYBYTES];
-    unsigned char remote_static_pk[crypto_box_PUBLICKEYBYTES];
-    unsigned char remote_ephemeral_pk[crypto_box_PUBLICKEYBYTES];
-    
-    // Session Keys (Rx/Tx)
-    unsigned char rx_key[32];
-    unsigned char tx_key[32];
-    uint64_t rx_nonce;
-    uint64_t tx_nonce;
-
     // Active DHT Lookup (Simple Single-Lookup support)
     int lookup_active;
     uint8_t lookup_target[32];
@@ -75,6 +85,10 @@ typedef struct {
 
     // Bootstrap Configuration
     int is_bootstrap;
+    
+    // Peer Sessions (Multi-peer support)
+    PeerSession peers[MAX_PEERS];
+    
 } HyperswarmState;
 
 HyperswarmState* hyperswarm_create();
@@ -85,6 +99,7 @@ void hyperswarm_leave(HyperswarmState* state, const char* topic_hex);
 void hyperswarm_poll(HyperswarmState* state);
 int hyperswarm_get_port(HyperswarmState* state);
 void hyperswarm_send_debug(HyperswarmState* state, const char* ip, int port, const char* msg);
+void hyperswarm_broadcast(HyperswarmState* state, const char* msg);
 void hyperswarm_add_peer(HyperswarmState* state, const char* ip, int port, const char* id_hex);
 
 #endif // HYPERSWARM_CORE_H

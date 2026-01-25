@@ -8,7 +8,11 @@ KadePy is a robust and efficient Distributed Hash Table (DHT) library implementi
 
 - **High Performance**: Core logic (UDP reactor, routing table, storage, protocol) implemented in C for minimal overhead and maximum throughput.
 - **Cross-Platform**: Fully compatible with Windows, Linux, and macOS.
-- **Hyperswarm Native Extension (New in v0.2.0)**:
+- **Hyperswarm Integration (v0.2.3)**:
+  - **Transparent Bridge**: Automatically launches a managed Node.js bridge to leverage the battle-tested JS Hyperswarm implementation.
+  - **Full Compatibility**: Connect seamlessly with existing Hyperswarm networks (Node.js, Holepunch).
+  - **Auto-Setup**: Automatically handles dependency installation (`npm install`) and process management.
+- **Native Extensions**:
   - **Noise Handshake (XX Pattern)**: Secure, authenticated connections using `libsodium` (Ed25519/Curve25519).
   - **UDX Transport**: Reliable, encrypted UDP transport with congestion control and packet ordering.
   - **Holepunching**: Built-in NAT traversal.
@@ -80,11 +84,16 @@ KadePy follows a hybrid architecture:
     *   **Routing**: Manages K-Buckets and node lookups.
     *   **Storage**: In-memory key-value storage with expiration.
     *   **Crypto**: ChaCha20 encryption and secure RNG.
-    *   **Hyperswarm (Experimental)**: Native C implementation of Noise/UDX (work in progress).
+    8.  **Hyperswarm (Experimental)**: Native C implementation of Noise/UDX (work in progress).
 
-2.  **Python Wrapper (`Swarm`)**:
+2.  **Node.js Bridge (`kadepy.js`)**:
+    *   **Bridge Process**: A lightweight Node.js process managed by Python.
+    *   **Hyperswarm**: Uses the official `hyperswarm` library for DHT discovery and holepunching.
+    *   **TCP IPC**: Communicates with Python via a local TCP connection using JSON messages.
+
+3.  **Python Wrapper (`Swarm`)**:
     *   Provides a high-level API.
-    *   Manages the C reactor lifecycle.
+    *   Manages the C reactor lifecycle and the Node.js Bridge process.
     *   Handles bootstrapping and iterative lookups.
 
 

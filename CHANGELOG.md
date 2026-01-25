@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-01-25
+
+### Added
+- **Integrated Node.js Bridge**:
+  - Full compatibility with the standard Hyperswarm network via a transparent Node.js bridge.
+  - **Auto-Management**: The `Swarm` class automatically installs dependencies (`npm install`) and starts the bridge process (`node bridge.js`) if needed.
+  - **Cross-Language Interop**: Verified communication between Python KadePy nodes and standard Node.js Hyperswarm peers.
+- **TCP Bridge Interface**: Internal JSON-RPC over TCP communication between Python and the local Node.js bridge.
+
 ## [0.2.2] - 2026-01-23
 
 ### Added

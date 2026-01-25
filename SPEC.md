@@ -98,3 +98,23 @@ Nodes can be initialized in **Isolated Mode** to act as a Bootstrap Node for a p
 - **Fixed Port**: Typically binds to port `10001` (configurable).
 - **Empty Bootstrap List**: Does not attempt to contact public bootstrap servers.
 - **Role**: Acts as the initial contact point (Beacon) for other nodes in the local mesh.
+
+## 7. Internal Bridge Protocol (Python <-> Node.js)
+
+To ensure full compatibility with the Hyperswarm ecosystem, KadePy v0.2.3+ utilizes a local TCP bridge to a managed Node.js process.
+
+### 7.1. Transport
+- **Protocol**: TCP (Loopback interface, 127.0.0.1)
+- **Port**: Ephemeral or Configurable (default 5001)
+- **Format**: Line-delimited JSON (NDJSON)
+
+### 7.2. Message Format
+```json
+{
+  "op": "send", 
+  "topic": "<hex_topic>",
+  "data": "<utf8_string_or_base64>",
+  "peerId": "<hex_peer_id>" 
+}
+```
+

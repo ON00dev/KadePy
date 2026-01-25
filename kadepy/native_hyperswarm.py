@@ -61,3 +61,28 @@ class NativeHyperswarm:
                 return self._node.add_peer(ip, port)
         else:
             print("Warning: Native extension does not support add_peer yet.")
+
+    def broadcast(self, msg):
+        """Broadcast a message to all connected peers."""
+        if hasattr(self._node, 'broadcast'):
+            return self._node.broadcast(msg)
+        else:
+            print("Warning: Native extension does not support broadcast yet.")
+
+    def get_connected_peer(self):
+        """Get the currently connected peer (IP, Port) or None."""
+        if hasattr(self._node, 'get_connected_peer'):
+            return self._node.get_connected_peer()
+        return None
+
+    def send(self, msg):
+        """
+        Send a message to the connected peer.
+        This is a high-level wrapper around send_debug.
+        """
+        peer = self.get_connected_peer()
+        if peer:
+            ip, port = peer
+            return self.send_debug(ip, port, msg)
+        else:
+            print("[NativeHyperswarm] Error: No connected peer. Cannot send message.")

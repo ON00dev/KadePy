@@ -106,6 +106,24 @@ static PyObject* HyperswarmNode_add_peer(HyperswarmNode* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+static PyObject* HyperswarmNode_broadcast(HyperswarmNode* self, PyObject* args) {
+    const char* msg;
+    if (!PyArg_ParseTuple(args, "s", &msg)) return NULL;
+    hyperswarm_broadcast(self->state, msg);
+    Py_RETURN_NONE;
+}
+
+static PyObject* HyperswarmNode_get_connected_peer(HyperswarmNode* self, PyObject* args) {
+    if (!self->state) Py_RETURN_NONE;
+    
+    for (int i=0; i<MAX_PEERS; i++) {
+        if (self->state->peers[i].active && self->state->peers[i].hs_state == HS_STATE_ESTABLISHED) {
+             return Py_BuildValue("(si)", self->state->peers[i].ip, self->state->peers[i].port);
+        }
+    }
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef HyperswarmNode_methods[] = {
     {"init_bootstrap_node", (PyCFunction)HyperswarmNode_init_bootstrap_node, METH_VARARGS, "Initialize as Bootstrap Node (Fixed Port, Isolated)"},
     {"join", (PyCFunction)HyperswarmNode_join, METH_VARARGS, "Join a topic"},
@@ -114,6 +132,8 @@ static PyMethodDef HyperswarmNode_methods[] = {
     {"get_port", (PyCFunction)HyperswarmNode_get_port, METH_NOARGS, "Get bound local port"},
     {"send_debug", (PyCFunction)HyperswarmNode_send_debug, METH_VARARGS, "Send debug packet"},
     {"add_peer", (PyCFunction)HyperswarmNode_add_peer, METH_VARARGS, "Add peer to routing table manually"},
+    {"broadcast", (PyCFunction)HyperswarmNode_broadcast, METH_VARARGS, "Broadcast message to all connected peers"},
+    {"get_connected_peer", (PyCFunction)HyperswarmNode_get_connected_peer, METH_NOARGS, "Get currently connected peer (IP, Port)"},
     {NULL}  /* Sentinel */
 };
 

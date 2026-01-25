@@ -1,0 +1,11 @@
+{
+  "name": "kadepy-bridge",
+  "version": "1.0.0",
+  "description": "Node.js bridge for KadePy",
+  "main": "bridge.js",
+  "dependencies": {
+    "hyperswarm": "^4.0.0",
+    "b4a": "^1.6.0",
+    "compact-encoding": "^2.11.0"
+  }
+}

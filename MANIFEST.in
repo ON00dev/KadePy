@@ -6,4 +6,8 @@ include pyproject.toml
 recursive-include src *.c *.h
 include src/kadepy_module.c
 recursive-include examples *.py
+recursive-include kadepy/js *
+prune kadepy/js/node_modules
+global-exclude *.pyc
+global-exclude __pycache__
 
