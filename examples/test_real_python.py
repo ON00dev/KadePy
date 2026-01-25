@@ -10,8 +10,8 @@ def main():
     print("Python Peer starting...")
     swarm = Swarm()
     
-    topic = hashlib.sha256(b"kadepy-interop-test").hexdigest()
-    print(f"Joining topic: {topic}")
+    topic = hashlib.sha256(b"kadepy-interop-test").digest()
+    print(f"Joining topic: {topic.hex()}")
     
     swarm.join(topic)
     

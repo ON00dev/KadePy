@@ -52,9 +52,9 @@ import time
 node = Swarm()
 print("Node started!")
 
-# Generate a topic key (32-byte hex string)
-topic = hashlib.sha256(b"my-app-topic").hexdigest()
-print(f"Joining topic: {topic}")
+# Generate a topic key (32-byte bytes)
+topic = hashlib.sha256(b"my-app-topic").digest()
+print(f"Joining topic: {topic.hex()}")
 
 # Join the swarm for this topic
 node.join(topic)
