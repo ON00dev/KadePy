@@ -41,32 +41,37 @@ pip install .
 
 ## Quick Start
 
-### Basic Node
+### Basic Node (Hyperswarm)
 
 ```python
 from kadepy import Swarm
+import hashlib
 import time
 
-# Create a node on a random port
+# Create a node (automatically starts the Node.js bridge)
 node = Swarm()
-print(f"Node started on port {node.port}")
+print("Node started!")
 
-# Create another node to bootstrap
-bootstrap_node = Swarm(port=8000)
-print("Bootstrap node on port 8000")
+# Generate a topic key (32-byte hex string)
+topic = hashlib.sha256(b"my-app-topic").hexdigest()
+print(f"Joining topic: {topic}")
 
-# Bootstrap the first node
-node.bootstrap("127.0.0.1", 8000)
+# Join the swarm for this topic
+node.join(topic)
 
-# Announce a topic (hash)
-topic_hash = b'\x00' * 32 # 32-byte hash
-node.announce(topic_hash, node.port)
+# Define callback for incoming data
+def on_data(data):
+    print(f"Received message: {data}")
+    # Reply to the sender (broadcasts to topic in this simple example)
+    node.send(f"Echo: {data}")
 
-# Find peers for the topic
-peers = node.get_peers(topic_hash)
-print("Found peers:", peers)
+# Register the callback
+node.on("data", on_data)
 
-# Keep alive
+# Send a message to the swarm
+node.send("Hello World from KadePy!")
+
+# Keep the process alive
 try:
     while True:
         time.sleep(1)
@@ -92,9 +97,9 @@ KadePy follows a hybrid architecture:
     *   **TCP IPC**: Communicates with Python via a local TCP connection using JSON messages.
 
 3.  **Python Wrapper (`Swarm`)**:
-    *   Provides a high-level API.
-    *   Manages the C reactor lifecycle and the Node.js Bridge process.
-    *   Handles bootstrapping and iterative lookups.
+    *   Provides a high-level API (`join`, `leave`, `send`, `on`).
+    *   Manages the Node.js Bridge process lifecycle.
+    *   Handles data encoding/decoding (Base64/UTF-8).
 
 
 ## Contributing
