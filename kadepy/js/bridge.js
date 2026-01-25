@@ -79,8 +79,16 @@ function handlePythonMessage(msg, socket) {
     case 'join':
       try {
         const topic = b4a.from(msg.topic, 'hex')
-        swarm.join(topic)
-        console.log('[Bridge] Joined topic:', msg.topic)
+        if (topic.length !== 32) {
+             console.error('[Bridge] Invalid topic length:', topic.length)
+             return
+        }
+        const opts = {
+            announce: msg.announce !== false,
+            lookup: msg.lookup !== false
+        }
+        swarm.join(topic, opts)
+        console.log(`[Bridge] Joined topic: ${msg.topic} (announce=${opts.announce}, lookup=${opts.lookup})`)
       } catch (e) {
         console.error('[Bridge] Join error:', e)
       }

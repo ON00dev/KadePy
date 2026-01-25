@@ -56,7 +56,7 @@ print("Node started!")
 topic = hashlib.sha256(b"my-app-topic").digest()
 print(f"Joining topic: {topic.hex()}")
 
-# Join the swarm for this topic
+# Join the swarm for this topic (announce=True, lookup=True by default)
 node.join(topic)
 
 # Define callback for incoming data

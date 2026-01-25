@@ -163,10 +163,17 @@ class Swarm:
     def on(self, event, callback):
         self._event_callbacks[event] = callback
 
-    def join(self, topic):
+    def join(self, topic, announce=True, lookup=True):
         if not self._ensure_bridge(): return
-        if isinstance(topic, bytes): topic = topic.hex()
-        msg = {"op": "join", "topic": topic}
+        if isinstance(topic, bytes):
+            if len(topic) != 32:
+                raise ValueError("Topic must be exactly 32 bytes")
+            topic = topic.hex()
+        elif isinstance(topic, str):
+             if len(topic) != 64:
+                 raise ValueError("Topic hex string must be 64 characters (32 bytes)")
+        
+        msg = {"op": "join", "topic": topic, "announce": announce, "lookup": lookup}
         self._send_bridge(msg)
 
     def leave(self, topic):
