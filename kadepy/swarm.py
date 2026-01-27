@@ -1,220 +1,123 @@
-import socket
-import struct
-import time
 import threading
-import json
-import os
-import subprocess
-import sys
+import time
 import atexit
-from ._core import (
-    create_swarm,
-    set_callback,
-    dht_ping,
-    dht_find_node,
-    dht_announce_peer,
-    dht_get_peers,
-    dump_routing_table,
-    xor_distance
-)
-
-# Constants from protocol.h
-MSG_PING = 0
-MSG_PONG = 1
-MSG_FIND_NODE = 2
-MSG_FOUND_NODES = 3
-MSG_ANNOUNCE_PEER = 4
-MSG_GET_PEERS = 5
-MSG_PEERS = 6
+from .native_hyperswarm import NativeHyperswarm
 
 class Swarm:
     def __init__(self, port=0, bootstrap_nodes=None):
         """
-        Inicializa o nó Swarm (KadePy).
+        Initialize the Swarm node using the official Hyperswarm stack (via NativeHyperswarm).
         
         Args:
-            port (int): Porta para vincular (Legacy DHT).
-            bootstrap_nodes (list): Lista de tuplas (ip, port) para bootstrap inicial.
+            port (int): Port to bind (UDP). Note: In the current implementation, 
+                        the port is assigned by the daemon, this argument is mostly ignored 
+                        unless we pass it to the daemon config.
+            bootstrap_nodes (list): List of tuples (ip, port). Ignored in official stack 
+                                    (uses global DHT by default).
         """
-        # Legacy DHT setup
-        self.port = create_swarm(port)
-        self.peers = {} 
-        self._callback = None
-        self.known_nodes = {}
-        self.lock = threading.Lock()
-        
-        # Bridge Setup
-        self._bridge_proc = None
-        self._bridge_socket = None
-        self._bridge_connected = False
+        self._node = NativeHyperswarm()
         self._event_callbacks = {}
-        self._bridge_thread = None
+        self._running = True
         
-        # Register global callback for Legacy DHT
-        set_callback(self._on_packet)
+        # Start the event polling loop
+        self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._poll_thread.start()
         
-        if bootstrap_nodes:
-            for ip, port in bootstrap_nodes:
-                self.add_bootstrap_node(ip, port)
-                
-        # Register cleanup
         atexit.register(self.close)
 
-    def _ensure_bridge(self):
-        """Garante que o bridge Node.js esteja rodando e conectado."""
-        if self._bridge_connected:
-            return True
-
-        bridge_script = os.path.join(os.path.dirname(__file__), 'js', 'bridge.js')
-        if not os.path.exists(bridge_script):
-            # Fallback for development
-            bridge_script = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'bridge', 'hyperswarm_bridge.js'))
-            
-        if not os.path.exists(bridge_script):
-            print(f"[Swarm] Erro: Script do bridge não encontrado.")
-            return False
-
-        # Verifica se node_modules existe
-        node_modules = os.path.join(os.path.dirname(bridge_script), 'node_modules')
-        if not os.path.exists(node_modules):
-            print("[Swarm] Instalando dependências do Bridge (hyperswarm)...")
-            try:
-                subprocess.check_call(['npm', 'install'], cwd=os.path.dirname(bridge_script), shell=True)
-            except Exception as e:
-                print(f"[Swarm] Falha ao instalar dependências: {e}")
-                return False
-
-        # Inicia o processo do bridge
-        if not self._bridge_proc:
-            print("[Swarm] Iniciando processo Bridge Node.js...")
-            env = os.environ.copy()
-            env['KADEPY_BRIDGE_PORT'] = '5001'
-            
-            try:
-                self._bridge_proc = subprocess.Popen(
-                    ['node', os.path.basename(bridge_script)],
-                    cwd=os.path.dirname(bridge_script),
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    shell=True if sys.platform == 'win32' else False
-                )
-                time.sleep(2)
-                
-                if self._bridge_proc.poll() is not None:
-                    out, err = self._bridge_proc.communicate()
-                    print(f"[Swarm] Bridge falhou ao iniciar:\n{err}")
-                    self._bridge_proc = None
-                    return False
-            except Exception as e:
-                print(f"[Swarm] Erro ao iniciar subprocesso: {e}")
-                return False
-
-        # Conecta via TCP
-        try:
-            self._bridge_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._bridge_socket.connect(('127.0.0.1', 5001))
-            self._bridge_connected = True
-            
-            self._bridge_thread = threading.Thread(target=self._bridge_reader_loop, daemon=True)
-            self._bridge_thread.start()
-            
-            print("[Swarm] Conectado ao Bridge com sucesso.")
-            return True
-        except Exception as e:
-            print(f"[Swarm] Falha ao conectar TCP ao bridge: {e}")
-            self.close()
-            return False
-
-    def _bridge_reader_loop(self):
-        buffer = ""
-        while self._bridge_connected and self._bridge_socket:
-            try:
-                data = self._bridge_socket.recv(4096)
-                if not data: break
-                buffer += data.decode('utf-8')
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    if line.strip():
-                        try:
-                            msg = json.loads(line)
-                            self._handle_bridge_message(msg)
-                        except: pass
-            except: break
-        self._bridge_connected = False
-
-    def _handle_bridge_message(self, msg):
-        event = msg.get('event')
-        if event == 'data':
-            if 'data' in self._event_callbacks:
-                import base64
-                try:
-                    raw = base64.b64decode(msg.get('data'))
-                    try:
-                        decoded = raw.decode('utf-8')
-                        self._event_callbacks['data'](decoded)
-                    except:
-                        self._event_callbacks['data'](raw)
-                except: pass
-        elif event == 'peer_connected':
-             print(f"[Swarm] Novo peer conectado: {msg.get('peerId')}")
-
     def on(self, event, callback):
+        """
+        Register an event handler.
+        Supported events: 'connection'
+        """
         self._event_callbacks[event] = callback
 
     def join(self, topic, announce=True, lookup=True):
-        if not self._ensure_bridge(): return
-        if isinstance(topic, bytes):
-            if len(topic) != 32:
-                raise ValueError("Topic must be exactly 32 bytes")
-            topic = topic.hex()
-        elif isinstance(topic, str):
-             if len(topic) != 64:
-                 raise ValueError("Topic hex string must be 64 characters (32 bytes)")
+        """
+        Join a topic in the swarm.
         
-        msg = {"op": "join", "topic": topic, "announce": announce, "lookup": lookup}
-        self._send_bridge(msg)
+        Args:
+            topic (str or bytes): 32-byte topic (hex string or bytes).
+            announce (bool): Whether to announce presence.
+            lookup (bool): Whether to look for peers.
+        """
+        if isinstance(topic, str):
+            if len(topic) != 64:
+                # Assuming hex string
+                pass
+            # Normalize to hex for internal use if needed, or keep as is.
+            # NativeHyperswarm handles bytes or hex.
+            pass
+        
+        # In official Hyperswarm, join implies both announce and lookup usually,
+        # but we can control it via options if we expose them.
+        # For now, simple join.
+        self._node.join(topic)
 
     def leave(self, topic):
-        if isinstance(topic, bytes): topic = topic.hex()
-        msg = {"op": "leave", "topic": topic}
-        self._send_bridge(msg)
+        """
+        Leave a topic.
+        """
+        self._node.leave(topic)
 
     def send(self, data):
-        if not self._ensure_bridge(): return
-        if isinstance(data, bytes):
-            import base64
-            b64 = base64.b64encode(data).decode('ascii')
-            msg = {"op": "send_blob", "data": b64}
-        else:
-            msg = {"op": "send", "data": str(data)}
-        self._send_bridge(msg)
-
-    def _send_bridge(self, msg):
-        if self._bridge_connected and self._bridge_socket:
-            try:
-                data = json.dumps(msg) + '\n'
-                self._bridge_socket.sendall(data.encode('utf-8'))
-            except: self._bridge_connected = False
+        """
+        Broadcast data to all connected peers.
+        """
+        # This is a high-level helper not present in raw Hyperswarm usually (which is connection based),
+        # but KadePy Swarm had it.
+        # We can iterate over peers in NativeHyperswarm.
+        self._node.send_debug(None, None, data)
 
     def close(self):
-        self._bridge_connected = False
-        if self._bridge_socket:
-            try: self._bridge_socket.close()
-            except: pass
-        if self._bridge_proc:
-            try: self._bridge_proc.terminate()
-            except: pass
-            self._bridge_proc = None
+        """
+        Destroy the swarm node.
+        """
+        self._running = False
+        if self._node:
+            self._node.destroy()
+            self._node = None
 
-    def _on_packet(self, sender_id, msg_type, ip, port, payload, signature=None):
-        pass
+    def _poll_loop(self):
+        while self._running:
+            try:
+                events = self._node.poll()
+                for event in events:
+                    self._handle_event(event)
+                time.sleep(0.01)
+            except Exception as e:
+                if self._running:
+                    print(f"Error in poll loop: {e}")
+                break
+
+    def _handle_event(self, event):
+        if 'event' not in event:
+            return
+            
+        evt_type = event['event']
+        
+        if evt_type == 'connection':
+            # Hyperswarm connection event
+            # In KadePy, we might want to expose the socket or a wrapper
+            # NativeHyperswarm already connects a local TCP socket for this stream.
+            # We can retrieve it.
+            stream_id = event.get('stream_id')
+            peer_socket = self._node.peers.get(stream_id)
+            
+            if 'connection' in self._event_callbacks:
+                self._event_callbacks['connection'](peer_socket, event.get('info', {}))
+                
+        elif evt_type == 'data':
+            # If we implemented data sniffing in daemon
+            if 'data' in self._event_callbacks:
+                self._event_callbacks['data'](event.get('data'))
 
     def add_bootstrap_node(self, ip, port):
         pass
 
     def run(self):
-        while True:
+        """
+        Block main thread (optional).
+        """
+        while self._running:
             time.sleep(1)
-

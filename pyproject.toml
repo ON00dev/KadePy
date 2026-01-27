@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kadepy"
-version = "0.2.4"
-description = "High-performance P2P Swarm implementation in C/Python with Signed RPC and IPC"
+version = "0.3.0"
+description = "High-performance P2P Swarm implementation via Official Hyperswarm Bindings"
 readme = "README.md"
 authors = [
     { name = "KadePy Contributors", email = "maintainer@example.com" }

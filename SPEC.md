@@ -1,120 +1,109 @@
-# KadePy Protocol Specification (v0.2)
+# KadePy Specification (v0.3.0)
 
-This document describes the binary protocol used by KadePy nodes to communicate.
+KadePy v0.3.0 implements a **Hybrid Architecture** that bridges Python with the official Node.js Hyperswarm stack. This ensures 100% compatibility with the Hyperswarm network, including hole-punching, DHT discovery, and end-to-end encryption.
 
-## 1. Fundamentals
+## 1. Architecture Overview
 
-- **Transport**: UDP
-- **Byte Order**: Network Byte Order (Big-Endian) for all multi-byte integers (IPs, Ports).
-- **Node ID**: 32 bytes (256 bits).
-- **Distance Metric**: XOR (Kademlia metric).
-- **Authentication**: Ed25519 Signatures.
+KadePy operates by spawning a managed Node.js subprocess (`daemon.js`) that handles all low-level networking. The Python process controls this daemon via a local TCP IPC bridge.
 
-## 2. Packet Structure
+```mermaid
+flowchart LR
+    subgraph Local ["Local Machine"]
+        direction LR
+        Python["Python Process<br>(KadePy SDK)"]
+        Node["Node.js Daemon<br>(Official Stack)"]
+    end
+    
+    Network["Hyperswarm Network<br>(Public/Private)"]
 
-Every packet consists of a **Header** followed by an optional **Payload**.
+    Python <==>|"IPC (TCP)<br>JSON-RPC 2.0"| Node
+    Node <==>|"P2P (UDX)<br>Noise / DHT"| Network
 
-### 2.1. Header (105 bytes)
+    style Python fill:#FFD43B,stroke:#306998,color:black
+    style Node fill:#68A063,stroke:#3C873A,color:white
+    style Network fill:#f9f9f9,stroke:#333,color:black
+```
 
-| Offset | Size | Field | Description |
-| :--- | :--- | :--- | :--- |
-| 0 | 1 | `Type` | Message Type ID |
-| 1 | 32 | `SenderPublicKey` | The 256-bit Ed25519 Public Key of the sender (also acts as Node ID) |
-| 33 | 8 | `Timestamp` | 64-bit Unix Timestamp (milliseconds) |
-| 41 | 64 | `Signature` | Ed25519 Signature of the packet content |
+## 2. Core Protocols (Network Layer)
 
-### 2.2. Message Types
+KadePy v0.3.0 delegates the network protocol stack to the official modules. It strictly adheres to the following specifications:
 
-| Value | Name | Payload | Description |
-| :--- | :--- | :--- | :--- |
-| `0x00` | `PING` | *None* | Keep-alive check. |
-| `0x01` | `PONG` | *None* | Response to PING. |
-| `0x02` | `FIND_NODE` | `TargetID` (32B) | Request closest nodes to TargetID. |
-| `0x03` | `FOUND_NODES`| `Count` (1B) + `Nodes` | Response to FIND_NODE. |
-| `0x04` | `ANNOUNCE` | `InfoHash` (32B) + `Port` (2B)| Announce availability of a resource (peer). |
-| `0x05` | `GET_PEERS` | `InfoHash` (32B) | Request peers for a specific resource. |
-| `0x06` | `PEERS` | `InfoHash` (32B) + `Count` (1B) + `Peers` | Response to GET_PEERS. |
+-   **Transport**: [UDX](https://github.com/hyperswarm/udx) (UDP-based Reliable Transport).
+-   **Discovery**: [HyperDHT](https://github.com/hyperswarm/dht) (Kademlia-based Distributed Hash Table).
+-   **Encryption**: [Noise Protocol Framework](https://noiseprotocol.org/) (Noise_XX_25519_ChaChaPoly_BLAKE2b).
+-   **Stream Multiplexing**: [Protomux](https://github.com/mafintosh/protomux).
 
-## 3. Payload Formats
+### 2.1. Compatibility
+-   **Topics**: 32-byte Buffers (represented as Hex strings in Python).
+-   **Keys**: Ed25519 Public Keys (Node IDs).
+-   **Discovery**: Fully compatible with public Hyperswarm bootstrap nodes.
 
-### 3.1. Node Wire Format (38 bytes)
-Used in `FOUND_NODES` responses to transmit contact info of K nodes.
+## 3. Bridge Protocol (IPC)
 
-| Size | Field | Description |
-| :--- | :--- | :--- |
-| 32 | `ID` | Node ID |
-| 4 | `IP` | IPv4 Address (Big Endian) |
-| 2 | `Port` | UDP Port (Big Endian) |
+Communication between the Python SDK and the Node.js Daemon occurs over a local TCP socket using **JSON-RPC 2.0** messages, delimited by newlines (`\n`).
 
-### 3.2. Peer Wire Format (6 bytes)
-Used in `PEERS` responses to transmit peer contact info (IP/Port only).
+-   **Transport**: TCP Loopback (127.0.0.1).
+-   **Port**: Ephemeral (assigned by OS, passed to Python via stdout during startup).
+-   **Encoding**: UTF-8.
 
-| Size | Field | Description |
-| :--- | :--- | :--- |
-| 4 | `IP` | IPv4 Address (Big Endian) |
-| 2 | `Port` | UDP Port (Big Endian) |
+### 3.1. Handshake / Startup
+1.  Python spawns `node daemon.js`.
+2.  Daemon binds a TCP server to port `0` (random).
+3.  Daemon prints the port to stdout: `PORT:<12345>`.
+4.  Python parses the port and connects via TCP.
 
-## 4. Encryption (Optional)
-
-If a **Network Key** is set, the packet payload (everything after the Header) can be encrypted using **ChaCha20**.
-
-- **Nonce**: Derived from timestamp or packet counter (implementation specific detail, currently standard implementation uses a static or derived nonce convention which is subject to future revision).
-- **Key**: 32-byte shared secret.
-
-## 5. Routing Table
-
-- **K-Buckets**: Nodes are stored in buckets based on the XOR distance from the local node.
-- **K**: Typically 20 (max nodes per bucket).
-- **Bucket Splitting**: Standard Kademlia splitting rules apply.
-
-## 6. Hyperswarm Native Protocol (v0.2+)
-
-The Native Hyperswarm Extension implements a distinct protocol stack compatible with Hyperswarm's UDX and Noise layer.
-
-### 6.1. UDX Packet Structure
-
-UDX packets are packed (`#pragma pack(1)`) and structured as follows:
-
-| Size | Field | Description |
-| :--- | :--- | :--- |
-| 1 | `Type` | Packet type (e.g., Data=1, Ack=2, Syn=3) |
-| 4 | `ConnID` | Connection ID (Little Endian) |
-| 4 | `Seq` | Sequence Number (Little Endian) |
-| 4 | `Ack` | Acknowledgment Number (Little Endian) |
-| Var | `Payload` | Data payload (Encrypted after handshake) |
-
-### 6.2. Noise Handshake (XX)
-
-Authentication and Key Exchange follow the Noise XX pattern:
-1.  **Msg 1 (A->B)**: `e` (Ephemeral Key)
-2.  **Msg 2 (B->A)**: `e, ee, s, es` (Responder Auth)
-3.  **Msg 3 (A->B)**: `s, se` (Initiator Auth)
-
-After the handshake, transport keys are derived for split-mode encryption (Initiator Tx = K1, Rx = K2).
-
-### 6.3. Private Bootstrap Mode
-
-Nodes can be initialized in **Isolated Mode** to act as a Bootstrap Node for a private network (Off-Grid).
-- **Fixed Port**: Typically binds to port `10001` (configurable).
-- **Empty Bootstrap List**: Does not attempt to contact public bootstrap servers.
-- **Role**: Acts as the initial contact point (Beacon) for other nodes in the local mesh.
-
-## 7. Internal Bridge Protocol (Python <-> Node.js)
-
-To ensure full compatibility with the Hyperswarm ecosystem, KadePy v0.2.3+ utilizes a local TCP bridge to a managed Node.js process.
-
-### 7.1. Transport
-- **Protocol**: TCP (Loopback interface, 127.0.0.1)
-- **Port**: Ephemeral or Configurable (default 5001)
-- **Format**: Line-delimited JSON (NDJSON)
-
-### 7.2. Message Format
+### 3.2. Request Format (Python -> Node)
+Standard JSON-RPC 2.0 Request:
 ```json
 {
-  "op": "send", 
-  "topic": "<hex_topic>",
-  "data": "<utf8_string_or_base64>",
-  "peerId": "<hex_peer_id>" 
+  "jsonrpc": "2.0",
+  "method": "join",
+  "params": {
+    "topic": "deadbeef..."
+  },
+  "id": 1
 }
 ```
 
+#### Supported Methods:
+| Method | Params | Description |
+| :--- | :--- | :--- |
+| `join` | `topic` (hex) | Join a topic in the DHT. |
+| `leave` | `topic` (hex) | Leave a topic. |
+| `flush` | None | Wait for all pending DHT queries to complete. |
+| `destroy` | None | Gracefully shut down the daemon. |
+
+### 3.3. Event Format (Node -> Python)
+Notifications are sent as JSON-RPC 2.0 Notifications (no `id`).
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "connection",
+  "params": {
+    "peerKey": "abcd...",
+    "client": true
+  }
+}
+```
+
+#### Supported Events:
+| Method | Params | Description |
+| :--- | :--- | :--- |
+| `connection` | `peerKey`, `client` | New peer connection established. |
+| `data` | `peerKey`, `data` (hex) | Data received from a peer. |
+| `disconnection`| `peerKey` | Peer disconnected. |
+| `error` | `message` | Error occurred. |
+
+### 3.4. Data Transmission
+Data sent over the bridge is currently encoded as **Hex Strings** or **Base64** (implementation detail) to ensure binary safety over JSON.
+
+## 4. Security Model
+
+-   **IPC Security**: The TCP bridge binds only to `127.0.0.1`. It is accessible only by processes on the local machine.
+-   **Network Security**: All P2P traffic is encrypted using Noise keys generated by the Node.js daemon. The Python side does not handle raw private keys for the transport layer, ensuring the official stack's security guarantees are preserved.
+
+## 5. Future Roadmap
+
+-   **Binary IPC**: Migrate from JSON-RPC to a binary format (e.g., Protobuf or raw struct) for higher throughput.
+-   **Shared Memory**: Explore shared memory transport for IPC to reduce copy overhead.

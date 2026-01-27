@@ -20,6 +20,30 @@ Thank you for considering contributing to KadePy! This project is open-source an
     pip install -e .
     ```
 
+## Setting up the Native Environment
+
+KadePy v0.3.0+ uses a hybrid architecture (Python + Native Node.js). To work on the core networking stack:
+
+1.  **Install Node.js & npm**: Ensure they are in your PATH.
+2.  **Setup Vendor Dependencies**:
+    ```bash
+    # The vendor/ directory contains git submodules or cloned repos.
+    # Ensure you have them checked out.
+    cd vendor/hyperswarm && git checkout v4.16.0
+    cd ../hyperdht && git checkout v6.28.0
+    # ... check vendor/versions.md for full list
+    ```
+3.  **Link Dependencies**:
+    Go to `kadepy/js` and install/link the dependencies:
+    ```bash
+    cd kadepy/js
+    npm install
+    # If using local vendor repos:
+    npm link ../../vendor/hyperswarm
+    npm link ../../vendor/hyperdht
+    # etc.
+    ```
+
 ## Development Workflow
 
 1.  **Create a branch** for your feature or fix:
@@ -27,15 +51,18 @@ Thank you for considering contributing to KadePy! This project is open-source an
     git checkout -b feature/my-new-feature
     ```
 2.  **Make your changes**.
-    - If modifying C code (`src/`), ensure it compiles without warnings.
-    - If working on the **Native Hyperswarm Extension**, ensure you have `libsodium` available or in `vendor/libsodium`.
-    - If modifying Python code (`kadepy/`), follow standard Python coding conventions (PEP 8).
+    - **Python**: `kadepy/` directory.
+    - **Native Bridge**: `kadepy/js/daemon.js` (The JS adapter).
+    - **Official Stack**: If you need to patch the official stack, modify the code in `vendor/` and update the reference in `kadepy/js/package.json` or submit PRs upstream.
 3.  **Run Tests**:
-    - We currently have `verify_full.py` and `test_script.py` for integration testing.
-    - Ensure all tests pass before committing.
+    - Use the interoperability tests to verify compliance.
     ```bash
-    python setup.py build_ext --inplace  # Rebuild C extension
-    python tests/verify_native_crypto.py # Verify encryption/handshake
+    # Run Node.js peer
+    cd tests/interop
+    node node_peer.js
+    
+    # Run KadePy peer (in another terminal)
+    python python_peer.py
     ```
 4.  **Commit your changes**:
     - Use clear and descriptive commit messages.
@@ -50,14 +77,12 @@ Thank you for considering contributing to KadePy! This project is open-source an
 
 ## Coding Standards
 
-- **C Code**:
-  - Keep it ANSI C compliant where possible.
-  - Use `stdint.h` types (`uint32_t`, `uint8_t`, etc.) for fixed-width integers.
-  - Manage memory carefully (malloc/free).
-  - Use `#ifdef _WIN32` for platform-specific code.
 - **Python Code**:
   - Follow PEP 8 style guide.
   - Use type hints where appropriate.
+- **JavaScript Code**:
+  - Follow standard Node.js async/await patterns.
+  - Keep the adapter (`daemon.js`) minimal and logic-free; delegate to `hyperswarm`.
 
 ## Reporting Issues
 
@@ -65,7 +90,7 @@ If you find a bug or have a feature request, please open an issue on GitHub. Pro
 - Steps to reproduce the issue.
 - Expected behavior.
 - Actual behavior.
-- Operating System and Python version.
+- Operating System, Python version, and Node.js version.
 
 ## License
 
